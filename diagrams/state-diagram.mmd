@@ -1,0 +1,27 @@
+stateDiagram-v2
+    [*] --> DRAFT : Создание черновика публикации (init draft)
+
+    state DRAFT {
+        [*] --> Editing : Набор текста
+        Editing --> ValidateLength : Проверка длины текста
+        ValidateLength --> Editing : Текст пустой или слишком длинный
+    }
+
+    DRAFT --> PUBLISHED : Публикация поста (publish)
+    
+    state PUBLISHED {
+        [*] --> ActiveInFeed : Доступен в лентах подписчиков
+        ActiveInFeed --> CommentsOpen : Открыт для комментариев
+    }
+
+    PUBLISHED --> EDITED : Редактирование автором (updatePost)
+    EDITED --> PUBLISHED : Сохранение изменений (фиксируется updatedAt)
+
+    PUBLISHED --> ARCHIVED : Скрытие из ленты (archive)
+    ARCHIVED --> PUBLISHED : Восстановление в ленту (restore)
+
+    PUBLISHED --> DELETED : Удаление автором (deletePost)
+    EDITED --> DELETED : Удаление автором (deletePost)
+    ARCHIVED --> DELETED : Окончательное удаление (deletePost)
+
+    DELETED --> [*] : Запись удалена / каскадное удаление комментариев

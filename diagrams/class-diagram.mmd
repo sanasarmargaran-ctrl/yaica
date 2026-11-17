@@ -1,0 +1,234 @@
+classDiagram
+    direction TB
+
+    %% Перечисления
+    class PostStatus {
+        <<enumeration>>
+        DRAFT
+        PUBLISHED
+        ARCHIVED
+    }
+
+    %% ==========================================
+    %% 1. PRESENTATION LAYER (Слой представления)
+    %% ==========================================
+    class UserController {
+        -UserService userService
+        +register(request) Response
+        +login(request) Response
+        +getProfile(int userId) Response
+    }
+
+    class PostController {
+        -PostService postService
+        -FeedService feedService
+        +createPost(request) Response
+        +updatePost(int postId, request) Response
+        +deletePost(int postId, request) Response
+        +getPost(int postId) Response
+        +addComment(int postId, request) Response
+        +getFeed(request) Response
+    }
+
+    class SubscriptionController {
+        -SubscriptionService subscriptionService
+        +subscribe(request) Response
+        +unsubscribe(request) Response
+        +getFollowers(int userId) Response
+        +getFollowing(int userId) Response
+    }
+
+    %% ==========================================
+    %% 2. APPLICATION / SERVICE LAYER (Сервисный слой)
+    %% ==========================================
+    class UserService {
+        -IUserRepository userRepo
+        +registerUser(string username, string email, string password) User
+        +authenticate(string email, string password) string
+        +getUserById(int id) User
+    }
+
+    class PostService {
+        -IPostRepository postRepo
+        -ICommentRepository commentRepo
+        -IUserRepository userRepo
+        +createPost(int authorId, string text) Post
+        +updatePost(int postId, int authorId, string newText) Post
+        +deletePost(int postId, int authorId) bool
+        +addComment(int postId, int authorId, string text) Comment
+        +getPostWithComments(int postId) Post
+    }
+
+    class SubscriptionService {
+        -ISubscriptionRepository subscriptionRepo
+        -IUserRepository userRepo
+        +subscribe(int followerId, int authorId) Subscription
+        +unsubscribe(int followerId, int authorId) bool
+        +isSubscribed(int followerId, int authorId) bool
+        +getFollowingIds(int followerId) List~int~
+    }
+
+    class FeedService {
+        -SubscriptionService subscriptionService
+        -IPostRepository postRepo
+        +getPersonalFeed(int userId, int limit, int offset) List~Post~
+    }
+
+    %% ==========================================
+    %% 3. BUSINESS LAYER (Бизнес-модель / Сущности)
+    %% ==========================================
+    class User {
+        +int id
+        +string username
+        +string email
+        +string passwordHash
+        +string createdAt
+        +getId() int
+        +getUsername() string
+        +getEmail() string
+    }
+
+    class Post {
+        +int id
+        +int authorId
+        +string text
+        +PostStatus status
+        +string createdAt
+        +string updatedAt
+        +isCreatedBy(int userId) bool
+        +updateText(string newText) void
+        +publish() void
+    }
+
+    class Comment {
+        +int id
+        +int postId
+        +int authorId
+        +string text
+        +string createdAt
+        +getId() int
+        +getText() string
+    }
+
+    class Subscription {
+        +int id
+        +int followerId
+        +int authorId
+        +string createdAt
+        +getFollowerId() int
+        +getAuthorId() int
+    }
+
+    %% Интерфейсы репозиториев (Контракты)
+    class IUserRepository {
+        <<interface>>
+        +save(User user) void
+        +findById(int id) User
+        +findByEmail(string email) User
+        +findByUsername(string username) User
+    }
+
+    class IPostRepository {
+        <<interface>>
+        +save(Post post) void
+        +update(Post post) void
+        +delete(int id) void
+        +findById(int id) Post
+        +findByAuthorIds(List~int~ authorIds, int limit, int offset) List~Post~
+        +findByAuthorId(int authorId) List~Post~
+    }
+
+    class ICommentRepository {
+        <<interface>>
+        +save(Comment comment) void
+        +findByPostId(int postId) List~Comment~
+        +delete(int id) void
+    }
+
+    class ISubscriptionRepository {
+        <<interface>>
+        +save(Subscription subscription) void
+        +delete(int followerId, int authorId) void
+        +exists(int followerId, int authorId) bool
+        +findFollowingIds(int followerId) List~int~
+        +findFollowersIds(int authorId) List~int~
+    }
+
+    %% ==========================================
+    %% 4. DATA ACCESS LAYER (Слой доступа к данным)
+    %% ==========================================
+    class DatabaseConnection {
+        -string dsn
+        +query(string sql, array params)
+        +execute(string sql, array params)
+    }
+
+    class SqlUserRepository {
+        -DatabaseConnection db
+        +save(User user) void
+        +findById(int id) User
+        +findByEmail(string email) User
+        +findByUsername(string username) User
+    }
+
+    class SqlPostRepository {
+        -DatabaseConnection db
+        +save(Post post) void
+        +update(Post post) void
+        +delete(int id) void
+        +findById(int id) Post
+        +findByAuthorIds(List~int~ authorIds, int limit, int offset) List~Post~
+        +findByAuthorId(int authorId) List~Post~
+    }
+
+    class SqlCommentRepository {
+        -DatabaseConnection db
+        +save(Comment comment) void
+        +findByPostId(int postId) List~Comment~
+        +delete(int id) void
+    }
+
+    class SqlSubscriptionRepository {
+        -DatabaseConnection db
+        +save(Subscription subscription) void
+        +delete(int followerId, int authorId) void
+        +exists(int followerId, int authorId) bool
+        +findFollowingIds(int followerId) List~int~
+        +findFollowersIds(int authorId) List~int~
+    }
+
+    %% Связи Presentation -> Service
+    UserController --> UserService
+    PostController --> PostService
+    PostController --> FeedService
+    SubscriptionController --> SubscriptionService
+
+    %% Связи Service -> Service / Interface
+    FeedService --> SubscriptionService
+    FeedService ..> IPostRepository
+    UserService ..> IUserRepository
+    PostService ..> IPostRepository
+    PostService ..> ICommentRepository
+    PostService ..> IUserRepository
+    SubscriptionService ..> ISubscriptionRepository
+    SubscriptionService ..> IUserRepository
+
+    %% Связи между сущностями
+    User "1" --> "*" Post : автор постов
+    User "1" --> "*" Comment : автор комментариев
+    Post "1" --> "*" Comment : содержит
+    Post --> PostStatus
+    User "1" --> "*" Subscription : подписчик (follower)
+    User "1" --> "*" Subscription : целевой автор (author)
+
+    %% Реализация интерфейсов (DAL ..|> Business)
+    SqlUserRepository ..|> IUserRepository
+    SqlPostRepository ..|> IPostRepository
+    SqlCommentRepository ..|> ICommentRepository
+    SqlSubscriptionRepository ..|> ISubscriptionRepository
+
+    %% Связи DAL -> DatabaseConnection
+    SqlUserRepository --> DatabaseConnection
+    SqlPostRepository --> DatabaseConnection
+    SqlCommentRepository --> DatabaseConnection
+    SqlSubscriptionRepository --> DatabaseConnection

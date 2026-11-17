@@ -1,0 +1,46 @@
+flowchart LR
+    %% Акторы
+    Guest["Гость (Guest)"]
+    User["Пользователь (User)"]
+
+    %% Граница системы
+    subgraph System ["Веб-приложение «Социальная сеть»"]
+        UC_Reg(["1. Регистрация учетной записи"])
+        UC_Login(["2. Вход в аккаунт"])
+        UC_CreatePost(["3. Создание публикации"])
+        UC_EditPost(["4. Редактирование публикации"])
+        UC_DeletePost(["5. Удаление публикации"])
+        UC_CheckAuthor(["Проверка авторских прав"])
+        UC_Comment(["6. Добавление комментария к посту"])
+        UC_Subscribe(["7. Подписка на пользователя"])
+        UC_CheckSelf(["Проверка: запрет подписки на себя"])
+        UC_CheckDup(["Проверка: защита от дубликата подписки"])
+        UC_Unsubscribe(["8. Отмена подписки"])
+        UC_Feed(["9. Просмотр персональной ленты новостей"])
+        UC_GetSubPosts(["Выборка постов авторов из подписок"])
+        UC_Profile(["10. Просмотр профиля и публикаций автора"])
+    end
+
+    %% Взаимодействия гостя
+    Guest --> UC_Reg
+    Guest --> UC_Login
+    Guest --> UC_Profile
+
+    %% Взаимодействия авторизованного пользователя
+    User --> UC_CreatePost
+    User --> UC_EditPost
+    User --> UC_DeletePost
+    User --> UC_Comment
+    User --> UC_Subscribe
+    User --> UC_Unsubscribe
+    User --> UC_Feed
+    User --> UC_Profile
+
+    %% Отношения include
+    UC_EditPost -.->|include| UC_CheckAuthor
+    UC_DeletePost -.->|include| UC_CheckAuthor
+
+    UC_Subscribe -.->|include| UC_CheckSelf
+    UC_Subscribe -.->|include| UC_CheckDup
+
+    UC_Feed -.->|include| UC_GetSubPosts

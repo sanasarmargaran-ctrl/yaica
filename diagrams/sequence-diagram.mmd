@@ -1,0 +1,66 @@
+sequenceDiagram
+    autonumber
+    actor User as Пользователь (Подписчик)
+    participant SC as SubscriptionController (Presentation)
+    participant SS as SubscriptionService (Service Layer)
+    participant UR as IUserRepository (Business/DAL)
+    participant SR as ISubscriptionRepository (Business/DAL)
+    participant S as Subscription (Business)
+    participant DB as DatabaseConnection (DAL)
+
+    %% 1. Запрос на оформление подписки
+    User->>SC: POST /subscriptions { authorId: 42 }
+    activate SC
+    SC->>SS: subscribe(followerId=10, authorId=42)
+    activate SS
+
+    %% 2. Бизнес-проверка: Запрет подписки на себя
+    Note over SS: Проверка 1: followerId == authorId
+    alt followerId == authorId (Подписка на себя)
+        SS-->>SC: Ошибка: "Нельзя подписаться на самого себя"
+        SC-->>User: HTTP 422: "Недопустимая операция: попытка подписки на свой профиль"
+    else followerId != authorId (Валидный автор)
+        %% 3. Проверка существования целевого автора
+        SS->>UR: findById(authorId=42)
+        activate UR
+        UR->>DB: query("SELECT * FROM users WHERE id = 42")
+        DB-->>UR: row / null
+        UR-->>SS: User / null
+        deactivate UR
+
+        alt Автор не найден
+            SS-->>SC: Ошибка: "Целевой пользователь не существует"
+            SC-->>User: HTTP 404: "Пользователь не найден"
+        else Автор существует
+            %% 4. Проверка на дубликат подписки
+            SS->>SR: exists(followerId=10, authorId=42)
+            activate SR
+            SR->>DB: query("SELECT 1 FROM subscriptions WHERE follower_id=10 AND author_id=42")
+            DB-->>SR: count > 0
+            SR-->>SS: true / false
+            deactivate SR
+
+            alt Подписка уже существует
+                SS-->>SC: Ошибка: "Повторная подписка запрещена"
+                SC-->>User: HTTP 409: "Вы уже подписаны на данного автора"
+            else Подписки нет (Успешное создание)
+                %% 5. Создание доменного объекта и сохранение
+                SS->>S: new Subscription(followerId=10, authorId=42, createdAt)
+                activate S
+                S-->>SS: subscriptionInstance
+                deactivate S
+
+                SS->>SR: save(subscriptionInstance)
+                activate SR
+                SR->>DB: execute("INSERT INTO subscriptions (follower_id, author_id, created_at) VALUES (10, 42, NOW())")
+                DB-->>SR: OK (newId=105)
+                SR-->>SS: void
+                deactivate SR
+
+                SS-->>SC: Subscription (Успех)
+                deactivate SS
+                SC-->>User: HTTP 201 Created: { "status": "success", "subscriptionId": 105 }
+                deactivate SC
+            end
+        end
+    end

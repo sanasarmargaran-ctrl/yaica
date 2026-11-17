@@ -1,0 +1,15 @@
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editors
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Environment & Dependencies
+.env
+vendor/
+node_modules/

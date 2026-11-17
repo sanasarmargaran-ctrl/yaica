@@ -1,284 +1,615 @@
 # Лабораторная работа №5: Архитектурное проектирование веб-приложения
-## Вариант 13. Социальная сеть (Архитектурный паттерн: MVC + Service Layer)
+## Вариант 13: «Социальная сеть» (Архитектурный шаблон: MVC + Service Layer)
+
+> 📌 **Базовый референс:** Архитектура и структура проекта выполнены с опорой на эталонную работу [tigranbabayan2008g-ops/Lab](https://github.com/tigranbabayan2008g-ops/Lab).
+
+---
+
+## Оглавление
+1. [Цель работы и суть задачи](#1-цель-работы-и-суть-задачи)
+2. [Выбор архитектуры: MVC + Service Layer](#2-выбор-архитектуры-mvc--service-layer)
+   - [Схема распределения слоев](#схема-распределения-слоев)
+   - [Описание слоев и зоны ответственности](#описание-слоев-и-зоны-ответственности)
+3. [Описание компонентов системы](#3-описание-компонентов-системы)
+   - [Сущности (Entities / Models)](#сущности-entities--models)
+   - [Сервисы (Service Layer)](#сервисы-service-layer)
+   - [Контроллеры (Presentation Layer)](#контроллеры-presentation-layer)
+   - [Таблица взаимодействия компонентов по слоям](#таблица-взаимодействия-компонентов-по-слоям)
+4. [UML-диаграммы и их подробное объяснение](#4-uml-диаграммы-и-их-подробное-объяснение)
+   - [4.1. Диаграмма классов (Class Diagram)](#41-диаграмма-классов-class-diagram)
+   - [4.2. Диаграмма последовательности (Sequence Diagram)](#42-диаграмма-последовательности-sequence-diagram)
+   - [4.3. Диаграмма состояний публикации (State Diagram)](#43-диаграмма-состояний-публикации-state-diagram)
+   - [4.4. Диаграмма прецедентов (Use Case Diagram)](#44-диаграмма-прецедентов-use-case-diagram)
+5. [Описание алгоритмов и логика ключевых сценариев](#5-описание-алгоритмов-и-логика-ключевых-сценариев)
+   - [Сценарий 1: Оформление подписки с валидацией бизнес-правил](#сценарий-1-оформление-подписки-с-валидацией-бизнес-правил)
+   - [Сценарий 2: Формирование и пагинация персональной ленты новостей](#сценарий-2-формирование-и-пагинация-персональной-ленты-новостей)
+   - [Сценарий 3: Редактирование и удаление поста с проверкой авторства](#сценарий-3-редактирование-и-удаление-поста-с-проверкой-авторства)
+6. [Спецификация DTO и эндпоинтов](#6-спецификация-dto-и-эндпоинтов)
+7. [Бизнес-правила системы](#7-бизнес-правила-системы)
+8. [Вывод](#8-вывод)
 
 ---
 
 ## 1. Цель работы и суть задачи
 
-Цель данной работы — спроектировать архитектуру бэкенда для компактной социальной сети, используя связку MVC (Model-View-Controller) и Service Layer (сервисный слой). Основная задача заключается в грамотном разделении обязанностей: дать пользователям возможность публиковать посты, комментировать записи, подписываться на интересных авторов и просматривать персональную ленту, при этом надежно изолировав бизнес-правила (запрет подписки на себя, предотвращение дублей подписок, контроль авторства) от уровня HTTP-контроллеров.
+Цель данной работы — спроектировать модульную архитектуру бэкенда для компактной социальной сети по Варианту 13 без написания исполняемого серверного кода на PHP, используя принципы объектно-ориентированного анализа, шаблоны **MVC + Service Layer** и стандарт моделирования **UML 2.5**.
+
+Основная задача системы заключается в четком разделении ответственности компонентов: предоставить пользователям возможность публиковать посты, оставлять комментарии, подписываться на других авторов и просматривать персональную новостную ленту, строго инкапсулировав бизнес-ограничения (запрет подписки на себя, предотвращение дублирующих подписок, контроль авторских прав) в сервисном слое.
 
 ---
 
 ## 2. Выбор архитектуры: MVC + Service Layer
 
-В стандартном MVC часто возникает проблема «толстых контроллеров» (Fat Controllers): когда проект разрастается, разработчики начинают писать валидацию, проверки прав доступа, выборки из базы и сложную бизнес-логику прямо в методах контроллера. В итоге контроллер превращается в нечитаемую «портянку» на сотни строк, которую тяжело поддерживать, практически невозможно переиспользовать (например, для мобильного API или консольных команд) и очень сложно покрывать юнит-тестами.
+В стандартном шаблоне MVC контроллеры имеют тенденцию накапливать прикладную логику и превращаться в «толстые контроллеры» (Fat Controllers). Когда валидация данных, проверки прав, работа с SQL и предметные правила пишутся в методах контроллера, система теряет тестируемость, а код становится невозможно переиспользовать в других интерфейсах (например, в REST API или CLI).
 
-Чтобы этого избежать, мы дополняем классический MVC сервисным слоем (Service Layer):
+Для устранения этих недостатков архитектура дополнена сервисным слоем (**Service Layer**):
 
-- **Тонкие контроллеры (Thin Controllers):** контроллер работает как простой диспетчер. Он принимает входящий HTTP-запрос, считывает входные параметры (ID пользователя из сессии, данные из POST/GET), передает их в соответствующий сервис, ловит ответ (или ошибку) и отдает клиенту готовый результат (шаблон страницы или JSON-ответ). Контроллер ничего не знает о тонкостях бизнес-правил.
-- **Сервисный слой (Service Layer):** именно здесь сосредоточена вся бизнес-логика и сценарии работы приложения. Сервисы не привязаны к вебу: они не работают напрямую с глобальными массивами `$_POST`, сессиями или куками. Они принимают понятные аргументы, проверяют бизнес-ограничения, вызывают модели/репозитории и возвращают готовые сущности или выбрасывают понятные ошибки.
-- **Модели (Entities):** отражают данные предметной области, их структуру и связи в базе данных.
+### Схема распределения слоев
 
-Такое разделение делает систему гибкой: любую операцию (например, создание поста или подписку) можно вызвать как из веб-интерфейса, так и из фонового скрипта или API без дублирования логики.
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER (Контроллеры)                    │
+│   Прием входящих HTTP-запросов (REST API / Web UI).                    │
+│   Считывание входных параметров и проверка HTTP-форматов.              │
+│   ТОНКИЕ КОНТРОЛЛЕРЫ: отсутствие бизнес-правил и SQL-запросов!        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Вызовы сервисов / Передача DTO
+┌───────────────────────────────────▼────────────────────────────────────┐
+│                  APPLICATION / SERVICE LAYER (Сервисы)                 │
+│   PostService, SubscriptionService, FeedService, UserService.          │
+│   Инкапсуляция всей бизнес-логики и сценариев приложения.              │
+│   Проверка запрета самоподписки, дубликатов, авторства постов.         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Контракты интерфейсов / Домен
+┌───────────────────────────────────▼────────────────────────────────────┐
+│                    BUSINESS LAYER (Сущности и Модели)                  │
+│   Доменные сущности: User, Post, Comment, Subscription.                │
+│   Инварианты моделей, геттеры/сеттеры, бизнес-методы сущностей.        │
+│   Интерфейсы репозиториев (IPostRepository, ISubscriptionRepository).  │
+└───────────────────────────────────▲────────────────────────────────────┘
+                                    │ Реализация интерфейсов (DIP)
+┌───────────────────────────────────┴────────────────────────────────────┐
+│                   DATA ACCESS LAYER (DAL / Репозитории)                │
+│   SqlUserRepository, SqlPostRepository, SqlSubscriptionRepository.     │
+│   DatabaseConnection — управление PDO-соединением и транзакциями.      │
+│   ИНКАПСУЛЯЦИЯ: ВСЯ РАБОТА С БД И SQL ТОЛЬКО В ЭТОМ СЛОЕ!              │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Описание слоев и зоны ответственности
+1. **Тонкие контроллеры (Thin Controllers):** Контроллер работает исключительно как диспетчер. Он считывает входящие данные запроса (ID пользователя из авторизационной сессии, тело POST-запроса), передает аргументы в соответствующий метод сервиса, перехватывает результат и возвращает клиенту HTTP-ответ.
+2. **Сервисный слой (Service Layer):** Оркестрирует прикладные сценарии. Сервисы не зависят от глобального HTTP-контекста, сессий или кук. Они реализуют все бизнес-инварианты, обращаются к репозиториям и возвращают доменные объекты либо выбрасывают исключения.
+3. **Бизнес-модель (Business Layer):** Содержит доменные сущности и абстрактные интерфейсы репозиториев, реализуя принцип инверсии зависимостей (Dependency Inversion Principle, DIP).
+4. **Слой данных (DAL):** Инкапсулирует низкоуровневые SQL-запросы к СУБД.
 
 ---
 
 ## 3. Описание компонентов системы
 
-В проектировании не используются громоздкие таблицы — все компоненты и их обязанности четко структурированы списками.
-
 ### Сущности (Entities / Models)
 
-- **User (Пользователь)**
-  - **Зона ответственности:** хранит профиль пользователя системы и учетные данные для авторизации.
-  - **Свойства:**
-    - `id` — целочисленный первичный ключ учетной записи;
-    - `username` — никнейм или имя пользователя;
-    - `email` — адрес электронной почты;
-    - `passwordHash` — хэш пароля для безопасной аутентификации;
-    - `createdAt` — дата и время регистрации аккаунта.
-  - **Методы:** базовые геттеры и сеттеры для чтения и обновления персональных данных.
+- **`User` (Пользователь)**
+  - **Зона ответственности:** представление профиля пользователя и учетных данных в системе.
+  - **Свойства:** `id` (int), `username` (string), `email` (string), `passwordHash` (string), `createdAt` (string).
+  - **Методы:** чтение идентификатора, имени, почты, проверка пароля.
 
-- **Post (Публикация / Пост)**
-  - **Зона ответственности:** представляет текстовую публикацию автора в социальной сети.
-  - **Свойства:**
-    - `id` — идентификатор публикации;
-    - `authorId` — идентификатор пользователя, создавшего пост (внешний ключ к User);
-    - `text` — текст сообщения;
-    - `createdAt` — точная дата и время создания записи;
-    - `updatedAt` — дата и время последнего редактирования.
-  - **Методы:** получение параметров записи, изменение текста поста с автоматическим обновлением даты `updatedAt`.
+- **`Post` (Публикация / Пост)**
+  - **Зона ответственности:** хранение публикации, авторства, текста и временных отметок.
+  - **Свойства:** `id` (int), `authorId` (int), `text` (string), `status` (PostStatus), `createdAt` (string), `updatedAt` (string).
+  - **Методы:** `isCreatedBy(userId)` (проверка авторства), `updateText(newText)` (обновление текста с установкой `updatedAt`), `publish()`.
 
-- **Comment (Комментарий)**
-  - **Зона ответственности:** хранит комментарий определенного пользователя под конкретной публикацией.
-  - **Свойства:**
-    - `id` — идентификатор комментария;
-    - `postId` — ссылка на публикацию (внешний ключ к Post);
-    - `authorId` — автор комментария (внешний ключ к User);
-    - `text` — текст комментария;
-    - `createdAt` — время создания комментария.
-  - **Методы:** чтение полей комментария, валидация непустого текста.
+- **`Comment` (Комментарий)**
+  - **Зона ответственности:** фиксация комментария пользователя к определенному посту.
+  - **Свойства:** `id` (int), `postId` (int), `authorId` (int), `text` (string), `createdAt` (string).
+  - **Методы:** получение идентификаторов и текста, валидация длины комментария.
 
-- **Subscription (Подписка)**
-  - **Зона ответственности:** фиксирует связь подписки одного пользователя на другого.
-  - **Свойства:**
-    - `id` — идентификатор связи;
-    - `followerId` — ID пользователя, который подписывается;
-    - `authorId` — ID автора, на чьи посты оформлена подписка;
-    - `createdAt` — дата и время оформления подписки.
-  - **Методы:** чтение идентификаторов подписчика и автора.
+- **`Subscription` (Подписка)**
+  - **Зона ответственности:** фиксация однонаправленной связи между подписчиком и отслеживаемым автором.
+  - **Свойства:** `id` (int), `followerId` (int), `authorId` (int), `createdAt` (string).
+  - **Методы:** получение идентификаторов участников подписки.
 
 ---
 
 ### Сервисы (Service Layer)
 
-- **PostService (Сервис постов и комментариев)**
-  - **Зона ответственности:** создание, редактирование, удаление публикаций, привязка комментариев и проверка прав автора на контент.
+- **`PostService`**
+  - **Зона ответственности:** бизнес-логика создания, редактирования, удаления публикаций и добавления комментариев.
   - **Методы:**
-    - `createPost(authorId, text)` — проверяет длину и наполненность текста, создает новую запись Post и сохраняет ее;
-    - `updatePost(postId, authorId, text)` — проверяет наличие поста, валидирует, что текущий `authorId` действительно является создателем публикации (защита от несанкционированного изменения чужих постов), обновляет текст и дату изменения;
-    - `deletePost(postId, authorId)` — проверяет права доступа автора и удаляет выбранную публикацию;
-    - `addComment(postId, authorId, text)` — проверяет существование целевого поста, валидирует текст комментария и сохраняет новый Comment;
-    - `getPostById(postId)` — возвращает публикацию вместе со списком комментариев и информацией об авторе.
+    - `createPost(authorId, text)` — валидация контента и сохранение нового поста;
+    - `updatePost(postId, authorId, newText)` — проверка прав автора (`authorId == post.authorId`), обновление текста и даты `updatedAt`;
+    - `deletePost(postId, authorId)` — проверка прав автора и удаление поста;
+    - `addComment(postId, authorId, text)` — проверка существования поста и добавление комментария;
+    - `getPostWithComments(postId)` — выборка поста со связанными комментариями.
 
-- **SubscriptionService (Сервис управления подписками)**
-  - **Зона ответственности:** реализация бизнес-правил взаимоотношений между пользователями (подписка, отписка, проверки).
+- **`SubscriptionService`**
+  - **Зона ответственности:** реализация бизнес-правил подписки и отписки.
   - **Методы:**
-    - `subscribe(followerId, authorId)` — выполняет проверки: запрет подписки на себя (`followerId != authorId`), существование автора и отсутствие уже созданной подписки. При успехе создает запись Subscription;
-    - `unsubscribe(followerId, authorId)` — находит существующую подписку и удаляет ее;
-    - `isSubscribed(followerId, authorId)` — проверяет, подписан ли уже один пользователь на другого;
-    - `getFollowingAuthorIds(followerId)` — возвращает массив идентификаторов авторов, на которых подписан конкретный пользователь.
+    - `subscribe(followerId, authorId)` — валидация запрета подписки на себя, проверка существования автора, проверка отсутствия дубликата и сохранение связи;
+    - `unsubscribe(followerId, authorId)` — удаление связи подписки;
+    - `isSubscribed(followerId, authorId)` — проверка активной подписки;
+    - `getFollowingIds(followerId)` — получение списка ID отслеживаемых авторов.
 
-- **FeedService (Сервис формирования ленты новостей)**
-  - **Зона ответственности:** сборка и сортировка персонального потока публикаций для конкретного читателя.
+- **`FeedService`**
+  - **Зона ответственности:** формирование персонализированной новостной ленты для пользователя.
   - **Методы:**
-    - `getFeed(userId, limit, offset)` — обращается к `SubscriptionService` за списком подписок пользователя, выбирает публикации этих авторов, сортирует их в обратном хронологическом порядке (сначала новые) и применяет пагинацию.
+    - `getPersonalFeed(userId, limit, offset)` — получение подписок через `SubscriptionService`, выборка публикаций этих авторов, упорядочивание `createdAt DESC` и применение пагинации.
+
+- **`UserService`**
+  - **Зона ответственности:** управление жизненным циклом профилей, хэширование паролей и регистрация.
+  - **Методы:** `registerUser(username, email, password)`, `authenticate(email, password)`, `getUserById(id)`.
 
 ---
 
-### Контроллеры (HTTP / Web Layer)
+### Контроллеры (Presentation Layer)
 
-- **UserController**
-  - **Зона ответственности:** обработка запросов регистрации и отображения профиля.
-  - **Методы:**
-    - `register(request)` — принимает данные из формы, передает их на регистрацию, возвращает страницу успеха или ошибки;
-    - `profile(request)` — считывает ID пользователя из маршрута и отдает данные страницы профиля.
-
-- **PostController**
-  - **Зона ответственности:** точка входа для всех HTTP-действий над публикациями и комментариями, а также отображения новостной ленты.
-  - **Методы:**
-    - `create(request)` — извлекает текст поста и ID авторизованного пользователя, вызывает `PostService.createPost()`, перенаправляет на страницу поста;
-    - `update(request)` — обрабатывает форму редактирования, передавая данные в `PostService.updatePost()`;
-    - `delete(request)` — обрабатывает удаление поста через `PostService.deletePost()`;
-    - `comment(request)` — принимает комментарий и передает его в `PostService.addComment()`;
-    - `feed(request)` — запрашивает у `FeedService.getFeed()` персональную ленту для текущего пользователя и передает данные во View.
-
-- **SubscriptionController**
-  - **Зона ответственности:** обработка действий пользователя по оформлению и отмене подписок.
-  - **Методы:**
-    - `subscribe(request)` — считывает ID автора, на которого хотят подписаться, и текущего пользователя, вызывает `SubscriptionService.subscribe()`;
-    - `unsubscribe(request)` — инициирует удаление подписки через `SubscriptionService.unsubscribe()`;
-    - `following(request)` — отдает список пользователей, на которых подписан текущий аккаунт.
+- **`UserController`:** `register()`, `login()`, `getProfile(userId)`.
+- **`PostController`:** `createPost()`, `updatePost()`, `deletePost()`, `getPost()`, `addComment()`, `getFeed()`.
+- **`SubscriptionController`:** `subscribe()`, `unsubscribe()`, `getFollowers()`, `getFollowing()`.
 
 ---
 
-## 4. Логика ключевых сценариев
+### Таблица взаимодействия компонентов по слоям
 
-### Сценарий 1: Оформление подписки (с бизнес-проверками)
-
-1. Пользователь нажимает кнопку «Подписаться» на странице автора.
-2. Веб-клиент отправляет POST-запрос на маршрут `/subscriptions/subscribe` с параметром `authorId`.
-3. Запрос попадает в метод `SubscriptionController.subscribe(request)`.
-4. Контроллер достает ID авторизованного пользователя (`followerId`) из сессии и `authorId` из параметров запроса, после чего сразу вызывает `SubscriptionService.subscribe(followerId, authorId)`.
-5. Внутри `SubscriptionService` последовательно проверяются жесткие бизнес-правила:
-   - **Проверка на самого себя:** если `followerId == authorId`, сервис выбрасывает исключение с понятной ошибкой: «Нельзя подписаться на самого себя».
-   - **Проверка существования автора:** сервис проверяет, существует ли аккаунт с переданным `authorId`. Если нет — выбрасывается исключение «Пользователь не найден».
-   - **Защита от дубликата:** сервис вызывает внутреннюю проверку `isSubscribed(followerId, authorId)`. Если запись уже есть — выбрасывается исключение «Вы уже подписаны на данного пользователя».
-6. Если проверки пройдены, сервис создает объект `Subscription` и фиксирует его в хранилище.
-7. Контроллер перехватывает результат: если все прошло успешно — возвращает редирект или статус успеха; если сервис выбросил ошибку — контроллер отдает пользователю понятное предупреждение (например, HTTP 422 с текстом ошибки).
-
-### Сценарий 2: Формирование персональной ленты новостей
-
-1. Авторизованный пользователь открывает страницу «Моя лента» (маршрут `/feed`).
-2. Запрос поступает в метод `PostController.feed(request)`.
-3. Контроллер считывает ID текущего пользователя из сессии и запрашивает ленту у `FeedService.getFeed(userId, limit, offset)`.
-4. `FeedService` обращается к сервису подписок: вызывает `SubscriptionService.getFollowingAuthorIds(userId)`.
-5. Анализ списка подписок:
-   - Если пользователь ни на кого не подписан (массив пуст), `FeedService` возвращает пустой список, предотвращая бессмысленные запросы к таблице постов.
-   - Если подписки есть, `FeedService` делает выборку всех записей `Post`, у которых `authorId` входит в полученный список.
-6. Выборка сортируется по убыванию даты: `createdAt DESC` (новые публикации первыми).
-7. К выборке применяются параметры пагинации (`limit` и `offset`), чтобы не перегружать память.
-8. Сформированный массив объектов `Post` возвращается в `PostController`.
-9. Контроллер передает полученный список в представление (View), где посты отрисовываются для пользователя.
+| Слой | Компонент | Зона ответственности |
+|---|---|---|
+| **Presentation** | `UserController` | Прием HTTP-запросов регистрации, авторизации и профилей |
+| **Presentation** | `PostController` | Эндпоинты постов, комментариев и ленты, делегирование в сервисы |
+| **Presentation** | `SubscriptionController` | Обработка действий подписки/отписки и списков читателей |
+| **Service** | `UserService` | Проверка уникальности email/логина, хэширование паролей, логика авторизации |
+| **Service** | `PostService` | Создание постов, проверка авторских прав, обновление дат, валидация комментариев |
+| **Service** | `SubscriptionService` | Проверка запрета самоподписки, дубликатов, отписка, выдача списка отслеживаемых авторов |
+| **Service** | `FeedService` | Агрегация постов отслеживаемых авторов, обратная сортировка (`createdAt DESC`), пагинация |
+| **Business** | `User`, `Post`, `Comment`, `Subscription` | Доменные сущности, бизнес-инварианты и методы изменения состояния |
+| **Business** | `IUserRepository`, `IPostRepository` и др. | Абстрактные контракты доступа к данным (DIP) |
+| **Data Access** | `SqlUserRepository`, `SqlPostRepository` | Выполнение SQL-запросов к таблицам `users`, `posts` |
+| **Data Access** | `SqlCommentRepository`, `SqlSubscriptionRepository` | SQL-запросы к таблицам `comments`, `subscriptions` |
+| **Data Access** | `DatabaseConnection` | Низкоуровневое управление соединением с СУБД и транзакциями |
 
 ---
 
-## 5. UML-диаграмма классов
+## 4. UML-диаграммы и их подробное объяснение
 
-Диаграмма наглядно демонстрирует разделение обязанностей: модели хранят данные, контроллеры служат точками входа для запросов, а вся логика делегируется сервисам.
+### 4.1. Диаграмма классов (Class Diagram)
 
 ```mermaid
 classDiagram
     direction TB
 
+    class PostStatus {
+        <<enumeration>>
+        DRAFT
+        PUBLISHED
+        ARCHIVED
+    }
+
+    class UserController {
+        -UserService userService
+        +register(request) Response
+        +login(request) Response
+        +getProfile(int userId) Response
+    }
+
+    class PostController {
+        -PostService postService
+        -FeedService feedService
+        +createPost(request) Response
+        +updatePost(int postId, request) Response
+        +deletePost(int postId, request) Response
+        +getPost(int postId) Response
+        +addComment(int postId, request) Response
+        +getFeed(request) Response
+    }
+
+    class SubscriptionController {
+        -SubscriptionService subscriptionService
+        +subscribe(request) Response
+        +unsubscribe(request) Response
+        +getFollowers(int userId) Response
+        +getFollowing(int userId) Response
+    }
+
+    class UserService {
+        -IUserRepository userRepo
+        +registerUser(string username, string email, string password) User
+        +authenticate(string email, string password) string
+        +getUserById(int id) User
+    }
+
+    class PostService {
+        -IPostRepository postRepo
+        -ICommentRepository commentRepo
+        -IUserRepository userRepo
+        +createPost(int authorId, string text) Post
+        +updatePost(int postId, int authorId, string newText) Post
+        +deletePost(int postId, int authorId) bool
+        +addComment(int postId, int authorId, string text) Comment
+        +getPostWithComments(int postId) Post
+    }
+
+    class SubscriptionService {
+        -ISubscriptionRepository subscriptionRepo
+        -IUserRepository userRepo
+        +subscribe(int followerId, int authorId) Subscription
+        +unsubscribe(int followerId, int authorId) bool
+        +isSubscribed(int followerId, int authorId) bool
+        +getFollowingIds(int followerId) List~int~
+    }
+
+    class FeedService {
+        -SubscriptionService subscriptionService
+        -IPostRepository postRepo
+        +getPersonalFeed(int userId, int limit, int offset) List~Post~
+    }
+
     class User {
-        -int id
-        -string username
-        -string email
-        -string passwordHash
-        -DateTime createdAt
+        +int id
+        +string username
+        +string email
+        +string passwordHash
+        +string createdAt
         +getId() int
         +getUsername() string
         +getEmail() string
     }
 
     class Post {
-        -int id
-        -int authorId
-        -string text
-        -DateTime createdAt
-        -DateTime updatedAt
-        +getId() int
-        +getAuthorId() int
-        +getText() string
-        +setText(string text) void
-        +getCreatedAt() DateTime
-        +getUpdatedAt() DateTime
+        +int id
+        +int authorId
+        +string text
+        +PostStatus status
+        +string createdAt
+        +string updatedAt
+        +isCreatedBy(int userId) bool
+        +updateText(string newText) void
+        +publish() void
     }
 
     class Comment {
-        -int id
-        -int postId
-        -int authorId
-        -string text
-        -DateTime createdAt
+        +int id
+        +int postId
+        +int authorId
+        +string text
+        +string createdAt
         +getId() int
-        +getPostId() int
-        +getAuthorId() int
         +getText() string
-        +getCreatedAt() DateTime
     }
 
     class Subscription {
-        -int id
-        -int followerId
-        -int authorId
-        -DateTime createdAt
-        +getId() int
+        +int id
+        +int followerId
+        +int authorId
+        +string createdAt
         +getFollowerId() int
         +getAuthorId() int
-        +getCreatedAt() DateTime
     }
 
-    class PostService {
-        +createPost(int authorId, string text) Post
-        +updatePost(int postId, int authorId, string text) Post
-        +deletePost(int postId, int authorId) bool
-        +addComment(int postId, int authorId, string text) Comment
-        +getPostById(int postId) Post
+    class IUserRepository {
+        <<interface>>
+        +save(User user) void
+        +findById(int id) User
+        +findByEmail(string email) User
+        +findByUsername(string username) User
     }
 
-    class SubscriptionService {
-        +subscribe(int followerId, int authorId) Subscription
-        +unsubscribe(int followerId, int authorId) bool
-        +isSubscribed(int followerId, int authorId) bool
-        +getFollowingAuthorIds(int followerId) List
+    class IPostRepository {
+        <<interface>>
+        +save(Post post) void
+        +update(Post post) void
+        +delete(int id) void
+        +findById(int id) Post
+        +findByAuthorIds(List~int~ authorIds, int limit, int offset) List~Post~
+        +findByAuthorId(int authorId) List~Post~
     }
 
-    class FeedService {
-        -SubscriptionService subscriptionService
-        +getFeed(int userId, int limit, int offset) List
+    class ICommentRepository {
+        <<interface>>
+        +save(Comment comment) void
+        +findByPostId(int postId) List~Comment~
+        +delete(int id) void
     }
 
-    class UserController {
-        +register(Request request) Response
-        +profile(Request request) Response
+    class ISubscriptionRepository {
+        <<interface>>
+        +save(Subscription subscription) void
+        +delete(int followerId, int authorId) void
+        +exists(int followerId, int authorId) bool
+        +findFollowingIds(int followerId) List~int~
+        +findFollowersIds(int authorId) List~int~
     }
 
-    class PostController {
-        -PostService postService
-        -FeedService feedService
-        +create(Request request) Response
-        +update(Request request) Response
-        +delete(Request request) Response
-        +comment(Request request) Response
-        +feed(Request request) Response
+    class DatabaseConnection {
+        -string dsn
+        +query(string sql, array params)
+        +execute(string sql, array params)
     }
 
-    class SubscriptionController {
-        -SubscriptionService subscriptionService
-        +subscribe(Request request) Response
-        +unsubscribe(Request request) Response
-        +following(Request request) Response
+    class SqlUserRepository {
+        -DatabaseConnection db
+        +save(User user) void
+        +findById(int id) User
+        +findByEmail(string email) User
+        +findByUsername(string username) User
     }
 
-    %% Связи между моделями
-    User "1" --> "*" Post : публикует
-    User "1" --> "*" Comment : пишет
+    class SqlPostRepository {
+        -DatabaseConnection db
+        +save(Post post) void
+        +update(Post post) void
+        +delete(int id) void
+        +findById(int id) Post
+        +findByAuthorIds(List~int~ authorIds, int limit, int offset) List~Post~
+        +findByAuthorId(int authorId) List~Post~
+    }
+
+    class SqlCommentRepository {
+        -DatabaseConnection db
+        +save(Comment comment) void
+        +findByPostId(int postId) List~Comment~
+        +delete(int id) void
+    }
+
+    class SqlSubscriptionRepository {
+        -DatabaseConnection db
+        +save(Subscription subscription) void
+        +delete(int followerId, int authorId) void
+        +exists(int followerId, int authorId) bool
+        +findFollowingIds(int followerId) List~int~
+        +findFollowersIds(int authorId) List~int~
+    }
+
+    UserController --> UserService
+    PostController --> PostService
+    PostController --> FeedService
+    SubscriptionController --> SubscriptionService
+
+    FeedService --> SubscriptionService
+    FeedService ..> IPostRepository
+    UserService ..> IUserRepository
+    PostService ..> IPostRepository
+    PostService ..> ICommentRepository
+    PostService ..> IUserRepository
+    SubscriptionService ..> ISubscriptionRepository
+    SubscriptionService ..> IUserRepository
+
+    User "1" --> "*" Post : автор постов
+    User "1" --> "*" Comment : автор комментариев
     Post "1" --> "*" Comment : содержит
-    User "1" --> "*" Subscription : подписчик
-    User "1" --> "*" Subscription : отслеживаемый автор
+    Post --> PostStatus
+    User "1" --> "*" Subscription : подписчик (follower)
+    User "1" --> "*" Subscription : целевой автор (author)
 
-    %% Контроллеры зависят от сервисов
-    PostController ..> PostService : делегирует логику постов
-    PostController ..> FeedService : запрашивает ленту
-    SubscriptionController ..> SubscriptionService : делегирует подписки
+    SqlUserRepository ..|> IUserRepository
+    SqlPostRepository ..|> IPostRepository
+    SqlCommentRepository ..|> ICommentRepository
+    SqlSubscriptionRepository ..|> ISubscriptionRepository
 
-    %% Сервисы управляют моделями и зависят друг от друга
-    FeedService ..> SubscriptionService : получает список авторов
-    FeedService ..> Post : собирает публикации
-    PostService ..> Post : создает и обновляет
-    PostService ..> Comment : добавляет
-    SubscriptionService ..> Subscription : валидирует и создает
+    SqlUserRepository --> DatabaseConnection
+    SqlPostRepository --> DatabaseConnection
+    SqlCommentRepository --> DatabaseConnection
+    SqlSubscriptionRepository --> DatabaseConnection
 ```
 
 ---
 
-## 6. Вывод
+### 4.2. Диаграмма последовательности (Sequence Diagram)
 
-В ходе выполнения работы была полностью спроектирована архитектура социальной сети (Вариант 13) по принципам MVC + Service Layer:
+Диаграмма иллюстрирует процесс **оформления подписки** с последовательной проверкой инвариантов бизнес-слоя:
 
-1. **Разделение ответственности:** контроллеры освобождены от прикладной логики и выполняют исключительно роль связующего звена между HTTP-запросами и сервисами.
-2. **Чистота бизнес-правил:** ключевые ограничения предметной области (запрет подписки на себя, предотвращение дублей, проверка авторства при редактировании и удалении постов) изолированы внутри соответствующих сервисов (`PostService`, `SubscriptionService`).
-3. **Эффективное формирование ленты:** логика сборки персонального фида вынесена в специализированный `FeedService`, который взаимодействует с `SubscriptionService` и отдает упорядоченный список публикаций.
-4. **Готовность к кодовой реализации:** построенная Mermaid-диаграмма классов и подробное описание сценариев позволяют сразу перейти к разработке на PHP (или любом другом серверном языке) с чистой и легко поддерживаемой кодовой базой.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Пользователь (Подписчик)
+    participant SC as SubscriptionController (Presentation)
+    participant SS as SubscriptionService (Service Layer)
+    participant UR as IUserRepository (Business/DAL)
+    participant SR as ISubscriptionRepository (Business/DAL)
+    participant S as Subscription (Business)
+    participant DB as DatabaseConnection (DAL)
+
+    User->>SC: POST /subscriptions { authorId: 42 }
+    activate SC
+    SC->>SS: subscribe(followerId=10, authorId=42)
+    activate SS
+
+    Note over SS: Проверка 1: followerId == authorId
+    alt followerId == authorId (Подписка на себя)
+        SS-->>SC: Ошибка: "Нельзя подписаться на самого себя"
+        SC-->>User: HTTP 422: "Недопустимая операция: попытка подписки на свой профиль"
+    else followerId != authorId (Валидный автор)
+        SS->>UR: findById(authorId=42)
+        activate UR
+        UR->>DB: query("SELECT * FROM users WHERE id = 42")
+        DB-->>UR: row / null
+        UR-->>SS: User / null
+        deactivate UR
+
+        alt Автор не найден
+            SS-->>SC: Ошибка: "Целевой пользователь не существует"
+            SC-->>User: HTTP 404: "Пользователь не найден"
+        else Автор существует
+            SS->>SR: exists(followerId=10, authorId=42)
+            activate SR
+            SR->>DB: query("SELECT 1 FROM subscriptions WHERE follower_id=10 AND author_id=42")
+            DB-->>SR: count > 0
+            SR-->>SS: true / false
+            deactivate SR
+
+            alt Подписка уже существует
+                SS-->>SC: Ошибка: "Повторная подписка запрещена"
+                SC-->>User: HTTP 409: "Вы уже подписаны на данного автора"
+            else Подписки нет (Успешное создание)
+                SS->>S: new Subscription(followerId=10, authorId=42, createdAt)
+                activate S
+                S-->>SS: subscriptionInstance
+                deactivate S
+
+                SS->>SR: save(subscriptionInstance)
+                activate SR
+                SR->>DB: execute("INSERT INTO subscriptions (follower_id, author_id, created_at) VALUES (10, 42, NOW())")
+                DB-->>SR: OK (newId=105)
+                SR-->>SS: void
+                deactivate SR
+
+                SS-->>SC: Subscription (Успех)
+                deactivate SS
+                SC-->>User: HTTP 201 Created: { "status": "success", "subscriptionId": 105 }
+                deactivate SC
+            end
+        end
+    end
+```
+
+---
+
+### 4.3. Диаграмма состояний публикации (State Diagram)
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT : Создание черновика публикации (init draft)
+
+    state DRAFT {
+        [*] --> Editing : Набор текста
+        Editing --> ValidateLength : Проверка длины текста
+        ValidateLength --> Editing : Текст пустой или слишком длинный
+    }
+
+    DRAFT --> PUBLISHED : Публикация поста (publish)
+    
+    state PUBLISHED {
+        [*] --> ActiveInFeed : Доступен в лентах подписчиков
+        ActiveInFeed --> CommentsOpen : Открыт для комментариев
+    }
+
+    PUBLISHED --> EDITED : Редактирование автором (updatePost)
+    EDITED --> PUBLISHED : Сохранение изменений (фиксируется updatedAt)
+
+    PUBLISHED --> ARCHIVED : Скрытие из ленты (archive)
+    ARCHIVED --> PUBLISHED : Восстановление в ленту (restore)
+
+    PUBLISHED --> DELETED : Удаление автором (deletePost)
+    EDITED --> DELETED : Удаление автором (deletePost)
+    ARCHIVED --> DELETED : Окончательное удаление (deletePost)
+
+    DELETED --> [*] : Запись удалена / каскадное удаление комментариев
+```
+
+---
+
+### 4.4. Диаграмма прецедентов (Use Case Diagram)
+
+```mermaid
+flowchart LR
+    Guest["Гость (Guest)"]
+    User["Пользователь (User)"]
+
+    subgraph System ["Веб-приложение «Социальная сеть»"]
+        UC_Reg(["1. Регистрация учетной записи"])
+        UC_Login(["2. Вход в аккаунт"])
+        UC_CreatePost(["3. Создание публикации"])
+        UC_EditPost(["4. Редактирование публикации"])
+        UC_DeletePost(["5. Удаление публикации"])
+        UC_CheckAuthor(["Проверка авторских прав"])
+        UC_Comment(["6. Добавление комментария к посту"])
+        UC_Subscribe(["7. Подписка на пользователя"])
+        UC_CheckSelf(["Проверка: запрет подписки на себя"])
+        UC_CheckDup(["Проверка: защита от дубликата подписки"])
+        UC_Unsubscribe(["8. Отмена подписки"])
+        UC_Feed(["9. Просмотр персональной ленты новостей"])
+        UC_GetSubPosts(["Выборка постов авторов из подписок"])
+        UC_Profile(["10. Просмотр профиля и публикаций автора"])
+    end
+
+    Guest --> UC_Reg
+    Guest --> UC_Login
+    Guest --> UC_Profile
+
+    User --> UC_CreatePost
+    User --> UC_EditPost
+    User --> UC_DeletePost
+    User --> UC_Comment
+    User --> UC_Subscribe
+    User --> UC_Unsubscribe
+    User --> UC_Feed
+    User --> UC_Profile
+
+    UC_EditPost -.->|include| UC_CheckAuthor
+    UC_DeletePost -.->|include| UC_CheckAuthor
+
+    UC_Subscribe -.->|include| UC_CheckSelf
+    UC_Subscribe -.->|include| UC_CheckDup
+
+    UC_Feed -.->|include| UC_GetSubPosts
+```
+
+---
+
+## 5. Описание алгоритмов и логика ключевых сценариев
+
+### Сценарий 1: Оформление подписки с валидацией бизнес-правил
+1. Пользователь инициирует подписку на странице автора.
+2. Контроллер `SubscriptionController.subscribe()` считывает `followerId` и `authorId` и вызывает `SubscriptionService.subscribe()`.
+3. Сервис выполняет проверку: если `followerId == authorId`, выбрасывается ошибка «Нельзя подписаться на самого себя».
+4. Сервис проверяет существование целевого автора в репозитории пользователей.
+5. Сервис проверяет отсутствие активной подписки через `SubscriptionRepository.exists()`.
+6. При успехе создается запись `Subscription` и фиксируется в базе данных.
+
+### Сценарий 2: Формирование и пагинация персональной ленты новостей
+1. Пользователь переходит на страницу «Лента» (`GET /feed`).
+2. `PostController.getFeed()` передает ID пользователя в `FeedService.getPersonalFeed(userId, limit, offset)`.
+3. `FeedService` запрашивает массив ID авторов у `SubscriptionService.getFollowingIds(userId)`.
+4. Если массив пуст, сразу возвращается пустой список.
+5. Если подписки есть, выполняется выборка постов с условием `authorId IN (...)` и сортировкой `createdAt DESC`.
+6. К выборке применяются параметры пагинации (`limit`, `offset`), посты обогащаются комментариями и передаются в контроллер.
+
+### Сценарий 3: Редактирование и удаление поста с проверкой авторства
+1. Запрос на изменение текста поста поступает в `PostController.updatePost(postId, request)`.
+2. `PostService` извлекает запись поста и проверяет условие: `post.authorId == currentUserId`.
+3. Если авторство не подтверждено, операция прерывается с ошибкой доступа 403 Forbidden.
+4. При успешной проверке текст обновляется, устанавливается новое значение `updatedAt`, и изменения сохраняются.
+
+---
+
+## 6. Спецификация DTO и эндпоинтов
+
+### Форматы передачи данных (DTO)
+```json
+// Создание публикации (CreatePostDTO)
+{
+  "text": "Текст новой публикации в социальной сети"
+}
+
+// Карточка публикации (PostResponseDTO)
+{
+  "id": 101,
+  "authorId": 14,
+  "authorUsername": "ivan_dev",
+  "text": "Текст новой публикации в социальной сети",
+  "status": "PUBLISHED",
+  "createdAt": "2026-11-17T18:00:00Z",
+  "updatedAt": "2026-11-17T18:00:00Z",
+  "commentsCount": 0
+}
+
+// Запрос на подписку (SubscribeRequestDTO)
+{
+  "authorId": 42
+}
+```
+
+---
+
+## 7. Бизнес-правила системы
+
+1. **Запрет подписки на самого себя:** $followerId \ne authorId$.
+2. **Защита от повторной подписки:** уникальность пары $(follower\_id, author\_id)$.
+3. **Контроль авторства:** только создатель публикации имеет право ее редактировать и удалять ($post.authorId == currentUserId$).
+4. **Обратная хронология:** лента всегда сортируется от самых свежих постов к более ранним ($\text{ORDER BY } createdAt \text{ DESC}$).
+5. **Чистые контроллеры:** контроллеры лишены SQL-запросов и бизнес-логики; вся персистентность вынесена в DAL.
+
+---
+
+## 8. Вывод
+
+В ходе лабораторной работы была спроектирована целостная архитектура веб-приложения социальной сети (Вариант 13) по образцу референсного проекта [tigranbabayan2008g-ops/Lab](https://github.com/tigranbabayan2008g-ops/Lab). 
+
+Использование шаблона **MVC + Service Layer** позволило надежно изолировать правила предметной области в специализированных сервисах, сохранив контроллеры компактными диспетчерами. Комплект диаграмм классов, состояний, последовательности и прецедентов UML 2.5 обеспечивает полную прозрачность архитектуры и готовность к программной реализации.
